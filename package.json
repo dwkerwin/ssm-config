@@ -1,0 +1,36 @@
+{
+  "name": "@dwkerwin/ssm-config",
+  "version": "1.0.0",
+  "description": "A config loader for environment variables, AWS SSM parameters, and static fallbacks, optimized for AWS Lambda with Extensions API support.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --ci --coverage",
+    "test:debug": "node --inspect-brk node_modules/.bin/jest --runInBand"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dwkerwin/ssm-config.git"
+  },
+  "keywords": [
+    "environment",
+    "variables",
+    "ssm",
+    "parameters"
+  ],
+  "author": "Doug Kerwin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dwkerwin/ssm-config/issues"
+  },
+  "homepage": "https://github.com/dwkerwin/ssm-config#readme",
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.0.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
