@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Test coverage
+coverage/
+
+# Logs
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
