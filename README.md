@@ -81,6 +81,42 @@ function someFunction() {
 
 Note: The initialization promise only needs to be awaited once at application startup. Other files can safely access the config values after initialization is complete. If you try to access values before initialization is complete, the config object will throw an error unless the value has a `fallbackStatic` defined.
 
+### Example: Using with Serverless Koa
+
+Here's how to use the configuration in a serverless Koa application that needs to support both AWS Lambda and local development:
+
+```javascript
+const serverless = require('serverless-http');
+const Koa = require('koa');
+const config = require('./ssmConfig');
+
+const app = new Koa();
+// ... app middleware setup ...
+
+// Initialize config once, outside the handler
+const configInitPromise = config.initializeConfig(
+    process.env.SSM_PARAMETER_KMS_KEY || 'alias/ssm-parameter-key'
+);
+
+// Lambda handler
+const handler = serverless(app);
+exports.handler = async (event, context) => {
+    await configInitPromise; // Wait for config initialization
+    return handler(event, context);
+};
+
+// Local development server
+if (!process.env.LAMBDA_TASK_ROOT && require.main === module) {
+    const port = process.env.PORT || 3000;
+    app.listen(port, async () => {
+        await configInitPromise; // Use the same promise here
+        console.log(`Server running on http://localhost:${port}`);
+    });
+}
+```
+
+This pattern ensures the configuration is initialized exactly once, whether running in Lambda or locally, and that the application doesn't start handling requests until the configuration is ready.
+
 ## API
 
 ### Configuration Map
@@ -173,10 +209,6 @@ CMD [ "index.handler" ]
 
 Note: The extension is completely optional. If not present, the package will automatically fall back to using batch SSM API calls, which still provides good performance for most use cases.
 
-## License
-
-MIT
-
 ## Testing
 
 This package includes a comprehensive test suite using Jest. The tests interact with real AWS SSM parameters to ensure everything works as expected.
@@ -225,3 +257,16 @@ The test suite:
 - Tests type conversion
 - Tests error handling
 - Cleans up test parameters on successful completion
+
+## Publishing to NPM
+
+```bash
+# depends on ~/.npmrc
+
+# update version number in package.json and then ...
+npm publish --access public
+```
+
+## License
+
+MIT
