@@ -15,7 +15,9 @@ const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
 
 // Helper function to fetch from Lambda extension via localhost:2773
 async function getFromLambdaExtension(parameterName, kmsKeyId = null) {
-  const endpoint = `http://localhost:2773/systemsmanager/parameters/get?name=${parameterName}&withDecryption=true`;
+  // URL encode the parameter name
+  const encodedName = encodeURIComponent(parameterName);
+  const endpoint = `http://localhost:2773/systemsmanager/parameters/get?name=${encodedName}&withDecryption=true`;
   const headers = {
     'X-Aws-Parameters-Secrets-Token': process.env.AWS_SESSION_TOKEN
   };
