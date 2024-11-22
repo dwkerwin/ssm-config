@@ -14,11 +14,19 @@ const isLambda = !!(process.env.LAMBDA_TASK_ROOT || process.env.AWS_LAMBDA_FUNCT
 const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
 
 // Helper function to fetch from Lambda extension via localhost:2773
-async function getFromLambdaExtension(parameterName) {
+async function getFromLambdaExtension(parameterName, kmsKeyId = null) {
   const endpoint = `http://localhost:2773/systemsmanager/parameters/get?name=${parameterName}&withDecryption=true`;
+  const headers = {
+    'X-Aws-Parameters-Secrets-Token': process.env.AWS_SESSION_TOKEN
+  };
+  
+  if (kmsKeyId) {
+    headers['X-Aws-Kms-Key-Id'] = kmsKeyId;
+  }
+
   try {
     logDebug(`Fetching SSM parameter ${parameterName} via Lambda extension`);
-    const response = await axios.get(endpoint);
+    const response = await axios.get(endpoint, { headers });
     if (!response.data.Parameter?.Value) {
       logWarn(`SSM parameter ${parameterName} not found via Lambda extension`);
       return null;
