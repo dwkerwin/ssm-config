@@ -52,34 +52,82 @@ const configInitPromise = config.initializeConfig(
 module.exports = config;
 ```
 
-2. In your main application file (e.g., `index.js`), wait for initialization:
+2. In your application code, you can safely initialize the config wherever needed:
 
 ```javascript
 const config = require('./ssmConfig');
 
-// Wait for initialization before starting your app
-async function start() {
-    await config.initializeConfig();
-    console.log('Configuration loaded, starting application...');
-    // ... rest of your application startup
-}
-
-start();
-```
-
-3. In other parts of your application, simply use:
-
-```javascript
-const config = require('./ssmConfig');
-
-function someFunction() {
-    // Access config values directly as properties
+// The library ensures only one actual initialization occurs
+async function someFunction() {
+    // Safe to call multiple times - will reuse existing initialization
+    await config.initializeConfig(
+        process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key'
+    );
     console.log(config.LOG_LEVEL);
-    console.log(config.JWT_SECRET);
+}
+
+class SomeService {
+    async init() {
+        // Same here - safe to call in multiple places
+        await config.initializeConfig(
+            process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key'
+        );
+        this.secret = config.JWT_SECRET;
+    }
 }
 ```
 
-Note: The initialization promise only needs to be awaited once at application startup. Other files can safely access the config values after initialization is complete. If you try to access values before initialization is complete, the config object will throw an error unless the value has a `fallbackStatic` defined.
+The library handles concurrent initialization safely:
+- If it's the first call, it performs the initialization
+- If initialization is in progress, it returns the existing promise
+- If already initialized, it returns immediately
+- Only one set of SSM calls will ever be made
+
+This means you don't need to manually coordinate initialization across your application - just call `initializeConfig()` when you need it, making sure to pass the KMS key if you're using encrypted parameters.
+
+### Initialization Patterns
+
+The library is flexible about where you initialize the config. Here are some common patterns:
+
+#### Constructor Initialization
+```javascript
+class MyService {
+    constructor() {
+        // Option 1: Initialize in constructor (if your framework supports async constructors)
+        this.initPromise = config.initializeConfig(
+            process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key'
+        );
+    }
+
+    async someMethod() {
+        // Wait for initialization before using config
+        await this.initPromise;
+        this.secret = config.JWT_SECRET;
+    }
+}
+
+// Option 2: Separate initialization method (recommended for most cases)
+class AnotherService {
+    constructor() {
+        // Don't access config values here
+    }
+
+    async init() {
+        await config.initializeConfig(
+            process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key'
+        );
+        // Now safe to access config
+        this.secret = config.JWT_SECRET;
+    }
+}
+```
+
+For most applications, we recommend:
+1. Using a separate `init()` method instead of initializing in constructors
+2. Always passing the KMS key if you're using encrypted parameters
+3. Awaiting initialization before accessing any config values
+
+Note: If you try to access config values before initialization is complete, the config object will throw an error unless the value has a `fallbackStatic` defined.
 
 ### Example: Using with Serverless Koa
 
@@ -93,15 +141,12 @@ const config = require('./ssmConfig');
 const app = new Koa();
 // ... app middleware setup ...
 
-// Initialize config once, outside the handler
-const configInitPromise = config.initializeConfig(
-    process.env.SSM_PARAMETER_KMS_KEY || 'alias/ssm-parameter-key'
-);
-
 // Lambda handler
 const handler = serverless(app);
 exports.handler = async (event, context) => {
-    await configInitPromise; // Wait for config initialization
+    await config.initializeConfig(
+        process.env.SSM_PARAMETER_KMS_KEY || 'alias/ssm-parameter-key'
+    );
     return handler(event, context);
 };
 
@@ -109,13 +154,13 @@ exports.handler = async (event, context) => {
 if (!process.env.LAMBDA_TASK_ROOT && require.main === module) {
     const port = process.env.PORT || 3000;
     app.listen(port, async () => {
-        await configInitPromise; // Use the same promise here
+        await config.initializeConfig();
         console.log(`Server running on http://localhost:${port}`);
     });
 }
 ```
 
-This pattern ensures the configuration is initialized exactly once, whether running in Lambda or locally, and that the application doesn't start handling requests until the configuration is ready.
+This pattern ensures the configuration is initialized before handling any requests, whether running in Lambda or locally.
 
 ## API
 

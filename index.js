@@ -6,6 +6,7 @@ const logWarn = (...args) => console.warn(...args);
 const logError = (...args) => console.error(...args);
 
 let configInitialized = false;
+let initializationPromise = null;
 let configMap = null;  // Will be set by the user
 
 const isLambda = !!(process.env.LAMBDA_TASK_ROOT || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -231,10 +232,21 @@ async function initializeConfig(kmsKeyId = null) {
   }
 
   if (configInitialized) {
-    return;
+    return Promise.resolve();
   }
 
-  await loadConfig(kmsKeyId);
+  // If there's already an initialization in progress, return that promise
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+
+  // Create and store the promise before doing any async work
+  initializationPromise = loadConfig(kmsKeyId).catch(error => {
+    initializationPromise = null;
+    throw error;
+  });
+
+  return initializationPromise;
 }
 
 // Function to get config values
