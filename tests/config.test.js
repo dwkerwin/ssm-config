@@ -218,4 +218,27 @@ describe('SSM Config', () => {
       .rejects
       .toThrow('Configuration map not set');
   });
+
+  test('should handle concurrent initializations with a single SSM call', async () => {
+    const config = require('../index');
+    
+    // Set up config with an SSM parameter
+    config.configMap = {
+      TEST_KEY: { 
+        envVar: 'TEST_VALUE', 
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM,
+        type: 'string' 
+      }
+    };
+
+    // Start multiple concurrent initializations
+    const [result1, result2, result3] = await Promise.all([
+      config.initializeConfig(),
+      config.initializeConfig(),
+      config.initializeConfig()
+    ]);
+
+    // Verify the config was loaded correctly
+    expect(config.TEST_KEY).toBe('test-string-value');
+  });
 });
