@@ -181,15 +181,25 @@ The `configMap` defines your configuration schema:
 
 ### Methods
 
-#### `config.initializeConfig(kmsKeyId)`
+#### `config.initializeConfig(kmsKeyId, options)`
 
 Asynchronously initializes the configuration. This should be called once at the start of your application.
 
 - `kmsKeyId`: (Optional) KMS key ID or alias for decryption of SSM parameters. Can be specified as either:
   - A key ID: `"1234abcd-12ab-34cd-56ef-1234567890ab"`
   - A key alias: `"alias/my-custom-key"`
+- `options`: (Optional) Configuration options object:
+  - `quiet`: (boolean) When true, suppresses verbose logging and only shows a condensed summary of loaded parameters. Default: false.
 
-Note: When using a custom KMS key, ensure your Lambda function's IAM role has the necessary `kms:Decrypt` permissions for that key.
+Example with quiet mode:
+```javascript
+await config.initializeConfig(
+    process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key',
+    { quiet: true }
+);
+// Output will be condensed to a single line like:
+// Config loaded: 2 from env, 3 from ssm, 1 from default
+```
 
 #### `config.SOME_CONFIG_KEY`
 

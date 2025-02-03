@@ -241,4 +241,127 @@ describe('SSM Config', () => {
     // Verify the config was loaded correctly
     expect(config.TEST_KEY).toBe('test-string-value');
   });
+
+  test('should respect quiet mode and only show summary', async () => {
+    // Clear the module cache to ensure a fresh instance
+    jest.resetModules();
+
+    // Now require the module
+    const config = require('../index');
+    const ConfigLogger = require('../lib/logger');
+
+    // Create a mock logger with Jest spy functions
+    const mockLogger = new ConfigLogger({
+      quiet: true,
+      output: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      }
+    });
+
+    // Mock SSM client to avoid actual AWS calls
+    const mockGetParametersCommand = jest.fn().mockResolvedValue({
+      Parameters: [
+        { Name: TEST_CONFIG.PARAMS.STRING_PARAM, Value: 'test-string-value' }
+      ],
+      InvalidParameters: []
+    });
+    const mockSend = jest.fn().mockImplementation(() => mockGetParametersCommand());
+    const mockSSMClient = { send: mockSend };
+
+    // Set up configuration
+    config.configMap = {
+      TEST_ENV: { envVar: 'TEST_ENV', type: 'string' },
+      TEST_SSM: { 
+        envVar: 'TEST_SSM', 
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM,
+        type: 'string' 
+      },
+      TEST_DEFAULT: { envVar: 'TEST_DEFAULT', fallbackStatic: 'default', type: 'string' }
+    };
+
+    process.env.TEST_ENV = 'env-value';
+    
+    // Set up mocks and quiet mode
+    config.ssmClient = mockSSMClient;
+    config.log = mockLogger;
+    
+    // Initialize with quiet mode
+    await config.initializeConfig(null, { quiet: true });
+
+    // Should only show the summary line
+    expect(mockLogger.output.info.mock.calls).toHaveLength(1);
+    expect(mockLogger.output.info.mock.calls[0][0]).toBe('Config loaded: 1 from env, 1 from ssm, 1 from default');
+    
+    // Debug logs should be suppressed
+    expect(mockLogger.output.debug.mock.calls).toHaveLength(0);
+  });
+
+  test('should show verbose output in normal mode', async () => {
+    // Clear the module cache to ensure a fresh instance
+    jest.resetModules();
+
+    // Now require the module
+    const config = require('../index');
+    const ConfigLogger = require('../lib/logger');
+
+    // Create a mock logger with Jest spy functions
+    const mockLogger = new ConfigLogger({
+      output: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      }
+    });
+
+    // Mock SSM client to avoid actual AWS calls
+    const mockGetParametersCommand = jest.fn().mockResolvedValue({
+      Parameters: [
+        { Name: TEST_CONFIG.PARAMS.STRING_PARAM, Value: 'test-string-value' }
+      ],
+      InvalidParameters: []
+    });
+    const mockSend = jest.fn().mockImplementation(() => mockGetParametersCommand());
+    const mockSSMClient = { send: mockSend };
+
+    // Set up configuration
+    config.configMap = {
+      TEST_ENV: { envVar: 'TEST_ENV', type: 'string' },
+      TEST_SSM: { 
+        envVar: 'TEST_SSM', 
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM,
+        type: 'string' 
+      }
+    };
+
+    process.env.TEST_ENV = 'env-value';
+    
+    // Set up mocks
+    config.ssmClient = mockSSMClient;
+    config.log = mockLogger;
+    
+    // Initialize without quiet mode
+    await config.initializeConfig();
+
+    // Should show summary line
+    expect(mockLogger.output.info.mock.calls.some(call => 
+      call[0].startsWith('Config loaded:')
+    )).toBe(true);
+
+    // Should show the "Loaded configuration values:" header
+    expect(mockLogger.output.info.mock.calls.some(call => 
+      call[0] === 'Loaded configuration values:'
+    )).toBe(true);
+
+    // Should show some debug output about SSM parameters
+    expect(mockLogger.output.debug.mock.calls.length).toBeGreaterThan(0);
+
+    // Should show details about loaded values
+    expect(mockLogger.output.info.mock.calls.some(call => 
+      call[0].includes('TEST_ENV') && call[0].includes('env')
+    )).toBe(true);
+  });
 });
