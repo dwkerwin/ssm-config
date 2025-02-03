@@ -1,9 +1,9 @@
 const { SSMClient, GetParameterCommand, GetParametersCommand } = require('@aws-sdk/client-ssm');
 const axios = require('axios');
-const logDebug = (...args) => console.debug(...args);
-const logInfo = (...args) => console.info(...args);
-const logWarn = (...args) => console.warn(...args);
-const logError = (...args) => console.error(...args);
+const ConfigLogger = require('./lib/logger');
+
+let isQuietMode = false;
+let log = new ConfigLogger();
 
 let configInitialized = false;
 let initializationPromise = null;
@@ -12,7 +12,7 @@ let configMap = null;  // Will be set by the user
 const isLambda = !!(process.env.LAMBDA_TASK_ROOT || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 // Initialize SSM client
-const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
+let ssmClient = new SSMClient({ region: process.env.AWS_REGION });
 
 // Helper function to fetch from Lambda extension via localhost:2773
 async function getFromLambdaExtension(parameterName, kmsKeyId = null) {
@@ -28,20 +28,20 @@ async function getFromLambdaExtension(parameterName, kmsKeyId = null) {
   }
 
   try {
-    logDebug(`Fetching SSM parameter ${parameterName} via Lambda extension`);
+    log.debug(`Fetching SSM parameter ${parameterName} via Lambda extension`);
     const response = await axios.get(endpoint, { headers });
     if (!response.data.Parameter?.Value) {
-      logWarn(`SSM parameter ${parameterName} not found via Lambda extension`);
+      log.warn(`SSM parameter ${parameterName} not found via Lambda extension`);
       return null;
     }
-    logDebug(`Successfully fetched SSM parameter ${parameterName} via Lambda extension`);
+    log.debug(`Successfully fetched SSM parameter ${parameterName} via Lambda extension`);
     return response.data.Parameter.Value;
   } catch (err) {
     // Improve error message based on status code
     if (err.response?.status === 404) {
-      logWarn(`SSM parameter ${parameterName} not found via Lambda extension`);
+      log.warn(`SSM parameter ${parameterName} not found via Lambda extension`);
     } else {
-      logWarn(`Error fetching SSM parameter ${parameterName} via Lambda extension: ${err.message}`);
+      log.warn(`Error fetching SSM parameter ${parameterName} via Lambda extension: ${err.message}`);
     }
     return null;
   }
@@ -65,11 +65,11 @@ async function getParameterFromSSM(parameterName, kmsKeyId = null) {
   } catch (err) {
     // Improve error messages based on error code
     if (err.name === 'ParameterNotFound') {
-      logWarn(`SSM parameter ${parameterName} not found in this AWS account`);
+      log.warn(`SSM parameter ${parameterName} not found in this AWS account`);
     } else if (err.name === 'AccessDeniedException') {
-      logWarn(`Access denied to SSM parameter ${parameterName}. Please check AWS credentials and permissions`);
+      log.warn(`Access denied to SSM parameter ${parameterName}. Please check AWS credentials and permissions`);
     } else {
-      logWarn(`Error fetching SSM parameter ${parameterName}: ${err.message}`);
+      log.warn(`Error fetching SSM parameter ${parameterName}: ${err.message}`);
     }
     return null;
   }
@@ -79,15 +79,17 @@ async function getParameterFromSSM(parameterName, kmsKeyId = null) {
 async function getBatchFromSSM(parameterNames, kmsKeyId = null) {
   // If using a custom KMS key, we need to fetch parameters individually
   if (kmsKeyId) {
-    logDebug('Fetching SSM parameters individually due to custom KMS key');
+    log.debug('Fetching SSM parameters individually due to custom KMS key');
     const values = {};
     for (const paramName of parameterNames) {
       const value = await getParameterFromSSM(paramName, kmsKeyId);
       if (value !== null) {
         values[paramName] = value;
-        logDebug(`Successfully fetched SSM parameter ${paramName}`);
+        if (!isQuietMode) {
+          log.debug(`Successfully fetched SSM parameter ${paramName}`);
+        }
       } else {
-        logWarn(`SSM parameter ${paramName} was not found.`);
+        log.warn(`SSM parameter ${paramName} was not found.`);
       }
     }
     return values;
@@ -105,16 +107,18 @@ async function getBatchFromSSM(parameterNames, kmsKeyId = null) {
     
     response.Parameters.forEach(param => {
       values[param.Name] = param.Value;
-      logDebug(`Successfully fetched SSM parameter ${param.Name}`);
+      if (!isQuietMode) {
+        log.debug(`Successfully fetched SSM parameter ${param.Name}`);
+      }
     });
 
     response.InvalidParameters.forEach(param => {
-      logWarn(`SSM parameter ${param} was not found.`);
+      log.warn(`SSM parameter ${param} was not found.`);
     });
 
     return values;
   } catch (err) {
-    logWarn(`Error fetching batch SSM parameters via SSM API: ${err.message}`);
+    log.warn(`Error fetching batch SSM parameters via SSM API: ${err.message}`);
     return {};
   }
 }
@@ -137,8 +141,6 @@ async function loadConfig(kmsKeyId = null) {
   if (configInitialized) {
     return;
   }
-
-  logInfo('Initializing config');
 
   const ssmParameters = Object.values(configMap)
     .filter(({ fallbackSSM }) => fallbackSSM)
@@ -202,31 +204,42 @@ async function loadConfig(kmsKeyId = null) {
     configValues.push({ key, value: convertedValue, type, source });
   }
 
-  logInfo('Config initialization complete');
-  logInfo('Loaded configuration values:');
-  
-  configValues.forEach(({ key, value, type, source }) => {
-    switch (type) {
-      case 'string':
-        logInfo(`  ${key}: (string) (${value.length} characters) (${source})`);
-        break;
-      case 'int':
-        const digits = String(value).replace(/^-/, '').length; // Count digits, ignoring minus sign
-        logInfo(`  ${key}: (int) (${digits} digits) (${source})`);
-        break;
-      case 'bool':
-        logInfo(`  ${key}: (bool) (${source})`);
-        break;
-      default:
-        logInfo(`  ${key}: (${type}) (${source})`);
-    }
+  const sourceCounts = {};
+  configValues.forEach(({ source }) => {
+    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
   });
+
+  const summary = Object.entries(sourceCounts)
+    .map(([source, count]) => `${count} from ${source}`)
+    .join(', ');
+  log.summary(`Config loaded: ${summary}`);
+
+  if (!isQuietMode) {
+    log.info('Loaded configuration values:');
+    
+    configValues.forEach(({ key, value, type, source }) => {
+      switch (type) {
+        case 'string':
+          log.info(`  ${key}: (string) (${value.length} characters) (${source})`);
+          break;
+        case 'int':
+          const digits = String(value).replace(/^-/, '').length; // Count digits, ignoring minus sign
+          log.info(`  ${key}: (int) (${digits} digits) (${source})`);
+          break;
+        case 'bool':
+          log.info(`  ${key}: (bool) (${source})`);
+          break;
+        default:
+          log.info(`  ${key}: (${type}) (${source})`);
+      }
+    });
+  }
 
   configInitialized = true;
 }
 
 // Function to initialize and populate the config object
-async function initializeConfig(kmsKeyId = null) {
+async function initializeConfig(kmsKeyId = null, options = {}) {
   if (!configMap) {
     throw new Error('Configuration map not set. Call config.configMap = {...} before initializing.');
   }
@@ -238,6 +251,12 @@ async function initializeConfig(kmsKeyId = null) {
   // If there's already an initialization in progress, return that promise
   if (initializationPromise) {
     return initializationPromise;
+  }
+
+  // Set quiet mode before creating the promise
+  if (options.quiet !== undefined) {
+    isQuietMode = options.quiet;
+    log.setQuietMode(options.quiet);
   }
 
   // Create and store the promise before doing any async work
@@ -274,11 +293,33 @@ const config = new Proxy({}, {
     if (prop === 'getConfig') {
       return getConfig;
     }
+    if (prop === 'log') {
+      return log;
+    }
+    if (prop === 'isQuietMode') {
+      return isQuietMode;
+    }
+    if (prop === 'ssmClient') {
+      return ssmClient;
+    }
     return getConfig(prop);
   },
   set(target, prop, value) {
     if (prop === 'configMap') {
       configMap = value;
+      return true;
+    }
+    if (prop === 'log') {
+      log = value;
+      return true;
+    }
+    if (prop === 'isQuietMode') {
+      isQuietMode = value;
+      log.setQuietMode(value);
+      return true;
+    }
+    if (prop === 'ssmClient') {
+      ssmClient = value;
       return true;
     }
     return false;
