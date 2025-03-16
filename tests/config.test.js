@@ -461,4 +461,76 @@ describe('SSM Config', () => {
 
     await expect(config.initializeConfig()).rejects.toThrow('Invalid boolean value');
   });
+
+  test('should handle static fallbacks properly for boolean values', async () => {
+    // Do NOT set environment variables, we want to test fallback
+    
+    const config = require('../index');
+    config.configMap = {
+      BOOL_FALLBACK_TRUE_KEY: { 
+        envVar: 'BOOL_FALLBACK_TRUE', 
+        fallbackStatic: 'true',
+        type: 'bool' 
+      },
+      BOOL_FALLBACK_FALSE_KEY: { 
+        envVar: 'BOOL_FALLBACK_FALSE', 
+        fallbackStatic: 'false',
+        type: 'bool' 
+      },
+      BOOL_FALLBACK_ONE_KEY: { 
+        envVar: 'BOOL_FALLBACK_ONE', 
+        fallbackStatic: '1',
+        type: 'bool' 
+      },
+      BOOL_FALLBACK_ZERO_KEY: { 
+        envVar: 'BOOL_FALLBACK_ZERO', 
+        fallbackStatic: '0',
+        type: 'bool' 
+      }
+    };
+
+    await config.initializeConfig();
+    expect(config.BOOL_FALLBACK_TRUE_KEY).toBe(true);
+    expect(config.BOOL_FALLBACK_FALSE_KEY).toBe(false);
+    expect(config.BOOL_FALLBACK_ONE_KEY).toBe(true);
+    expect(config.BOOL_FALLBACK_ZERO_KEY).toBe(false);
+  });
+
+  test('should handle static fallbacks properly for boolean when accessed before initialization', async () => {
+    // Do NOT set environment variables, we want to test fallback
+    
+    const config = require('../index');
+    config.configMap = {
+      BOOL_FALLBACK_TRUE_KEY: { 
+        envVar: 'BOOL_FALLBACK_TRUE', 
+        fallbackStatic: 'true',
+        type: 'bool' 
+      }
+    };
+
+    // Access BEFORE initialization
+    expect(config.BOOL_FALLBACK_TRUE_KEY).toBe(true);
+  });
+
+  test('should handle the case where environment variable is undefined after initialization', async () => {
+    // Do NOT set environment variables
+    
+    const config = require('../index');
+    config.configMap = {
+      BOOL_KEY: { 
+        envVar: 'BOOL_VAL_NOT_SET', 
+        fallbackStatic: 'true',
+        type: 'bool' 
+      }
+    };
+
+    // Initialize the config
+    await config.initializeConfig();
+    
+    // Delete the environment variable that was set during initialization
+    delete process.env.BOOL_VAL_NOT_SET;
+    
+    // Now access the config - this should still use the fallback
+    expect(config.BOOL_KEY).toBe(true);
+  });
 });

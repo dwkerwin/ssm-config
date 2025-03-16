@@ -291,15 +291,24 @@ async function initializeConfig(kmsKeyId = null, options = {}) {
 
 // Function to get config values
 function getConfig(key) {
-  const { envVar, fallbackStatic } = configMap[key];
+  const { envVar, fallbackStatic, type } = configMap[key];
+  
   if (!configInitialized) {
     // If not initialized, return fallback or throw error
     if (fallbackStatic !== undefined) {
-      return convertValue(fallbackStatic, configMap[key].type);
+      return convertValue(fallbackStatic, type);
     }
     throw new Error('Config not initialized. Call initializeConfig() first.');
   }
-  return convertValue(process.env[envVar], configMap[key].type);
+  
+  // Check if environment variable exists
+  const envValue = process.env[envVar];
+  if (envValue === undefined && fallbackStatic !== undefined) {
+    // Fall back to static value if env var is somehow undefined after initialization
+    return convertValue(fallbackStatic, type);
+  }
+  
+  return convertValue(envValue, type);
 }
 
 // Create a proxy object for easy access to config values
