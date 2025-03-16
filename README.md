@@ -207,10 +207,16 @@ Access configuration values directly as properties of the config object. Will th
 
 ### Value Types
 
-The configuration supports three types of values:
+The configuration supports four types of values:
 - `string`: String values (default)
 - `int`: Integer values (converted using parseInt)
-- `bool`: Boolean values (converted from string 'true'/'false')
+- `float`: Floating-point values (converted using parseFloat)
+- `bool`: Boolean values (converted from strings):
+  - `true` values: 'true' or '1'
+  - `false` values: 'false' or '0'
+  - Any other values will throw an error
+
+Invalid types (such as 'boolean' instead of 'bool') will cause an error to be thrown during initialization.
 
 ### Environment Detection
 

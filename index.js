@@ -125,11 +125,27 @@ async function getBatchFromSSM(parameterNames, kmsKeyId = null) {
 
 // Function to convert values based on the expected type
 function convertValue(value, type) {
+  // Validate the type is supported
+  const validTypes = ['string', 'int', 'float', 'bool'];
+  if (!validTypes.includes(type)) {
+    throw new Error(`Invalid type "${type}". Supported types are: ${validTypes.join(', ')}`);
+  }
+
   switch (type) {
     case 'int':
       return parseInt(value, 10);
+    case 'float':
+      return parseFloat(value);
     case 'bool':
-      return value === 'true';
+      // Enhanced boolean conversion
+      if (value === 'true' || value === '1' || value === 1) {
+        return true;
+      } else if (value === 'false' || value === '0' || value === 0) {
+        return false;
+      } else {
+        // Preserve the original string for error message clarity
+        throw new Error(`Invalid boolean value: "${value}". Expected "true", "false", "1", "0"`);
+      }
     case 'string':
     default:
       return value;  // No conversion needed for strings
@@ -223,8 +239,13 @@ async function loadConfig(kmsKeyId = null) {
           log.info(`  ${key}: (string) (${value.length} characters) (${source})`);
           break;
         case 'int':
-          const digits = String(value).replace(/^-/, '').length; // Count digits, ignoring minus sign
-          log.info(`  ${key}: (int) (${digits} digits) (${source})`);
+          const intDigits = String(value).replace(/^-/, '').length; // Count digits, ignoring minus sign
+          log.info(`  ${key}: (int) (${intDigits} digits) (${source})`);
+          break;
+        case 'float':
+          const floatStr = String(value);
+          const decimalPlaces = floatStr.includes('.') ? floatStr.split('.')[1].length : 0;
+          log.info(`  ${key}: (float) (${decimalPlaces} decimal places) (${source})`);
           break;
         case 'bool':
           log.info(`  ${key}: (bool) (${source})`);
