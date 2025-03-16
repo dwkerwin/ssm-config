@@ -15,6 +15,8 @@ describe('SSM Config', () => {
       STRING_PARAM: '/test/ssm-config/string-param',
       INT_PARAM: '/test/ssm-config/int-param',
       BOOL_PARAM: '/test/ssm-config/bool-param',
+      FLOAT_PARAM: '/test/ssm-config/float-param',
+      BOOL_ZERO_PARAM: '/test/ssm-config/bool-zero-param',
       SECRET_PARAM: '/test/ssm-config/secret-param',
       KMS_PARAM: '/test/ssm-config/kms-param'
     },
@@ -42,6 +44,18 @@ describe('SSM Config', () => {
       new PutParameterCommand({
         Name: TEST_CONFIG.PARAMS.BOOL_PARAM,
         Value: 'true',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.FLOAT_PARAM,
+        Value: '3.14',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BOOL_ZERO_PARAM,
+        Value: '0',
         Type: 'String',
         Overwrite: true
       }),
@@ -129,6 +143,16 @@ describe('SSM Config', () => {
         envVar: 'BOOL_VAL', 
         fallbackSSM: TEST_CONFIG.PARAMS.BOOL_PARAM, 
         type: 'bool' 
+      },
+      FLOAT_KEY: { 
+        envVar: 'FLOAT_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.FLOAT_PARAM, 
+        type: 'float' 
+      },
+      BOOL_ZERO_KEY: { 
+        envVar: 'BOOL_ZERO_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BOOL_ZERO_PARAM, 
+        type: 'bool' 
       }
     };
 
@@ -136,6 +160,8 @@ describe('SSM Config', () => {
     expect(config.STRING_KEY).toBe('test-string-value');
     expect(config.INT_KEY).toBe(42);
     expect(config.BOOL_KEY).toBe(true);
+    expect(config.FLOAT_KEY).toBe(3.14);
+    expect(config.BOOL_ZERO_KEY).toBe(false);
   });
 
   test('should handle SecureString parameters', async () => {
@@ -363,5 +389,76 @@ describe('SSM Config', () => {
     expect(mockLogger.output.info.mock.calls.some(call => 
       call[0].includes('TEST_ENV') && call[0].includes('env')
     )).toBe(true);
+  });
+
+  test('should throw error for invalid type', async () => {
+    const config = require('../index');
+    config.configMap = {
+      INVALID_TYPE_KEY: { 
+        envVar: 'INVALID_TYPE_VAL', 
+        fallbackStatic: 'some-value', 
+        type: 'boolean' // Using "boolean" instead of "bool"
+      }
+    };
+
+    await expect(config.initializeConfig()).rejects.toThrow('Invalid type "boolean"');
+  });
+
+  test('should throw error for invalid boolean value', async () => {
+    process.env.BOOL_VAL = 'not-a-boolean';
+    
+    const config = require('../index');
+    config.configMap = {
+      BOOL_KEY: { 
+        envVar: 'BOOL_VAL', 
+        type: 'bool'
+      }
+    };
+
+    await expect(config.initializeConfig()).rejects.toThrow('Invalid boolean value');
+  });
+
+  test('should properly convert float values', async () => {
+    process.env.FLOAT_VAL = '3.14159';
+    
+    const config = require('../index');
+    config.configMap = {
+      FLOAT_KEY: { envVar: 'FLOAT_VAL', type: 'float' }
+    };
+
+    await config.initializeConfig();
+    expect(config.FLOAT_KEY).toBe(3.14159);
+  });
+
+  test('should properly convert boolean values from different formats', async () => {
+    process.env.BOOL_TRUE_STR = 'true';
+    process.env.BOOL_TRUE_ONE = '1';
+    process.env.BOOL_FALSE_STR = 'false';
+    process.env.BOOL_FALSE_ZERO = '0';
+    
+    const config = require('../index');
+    config.configMap = {
+      BOOL_TRUE_STR_KEY: { envVar: 'BOOL_TRUE_STR', type: 'bool' },
+      BOOL_TRUE_ONE_KEY: { envVar: 'BOOL_TRUE_ONE', type: 'bool' },
+      BOOL_FALSE_STR_KEY: { envVar: 'BOOL_FALSE_STR', type: 'bool' },
+      BOOL_FALSE_ZERO_KEY: { envVar: 'BOOL_FALSE_ZERO', type: 'bool' }
+    };
+
+    await config.initializeConfig();
+    expect(config.BOOL_TRUE_STR_KEY).toBe(true);
+    expect(config.BOOL_TRUE_ONE_KEY).toBe(true);
+    expect(config.BOOL_FALSE_STR_KEY).toBe(false);
+    expect(config.BOOL_FALSE_ZERO_KEY).toBe(false);
+  });
+
+  test('should throw error for invalid boolean string values', async () => {
+    process.env.INVALID_BOOL = 'yes';
+    
+    const config = require('../index');
+    config.configMap = {
+      INVALID_BOOL_KEY: { envVar: 'INVALID_BOOL', type: 'bool' }
+    };
+
+    await expect(config.initializeConfig()).rejects.toThrow('Invalid boolean value');
   });
 });
