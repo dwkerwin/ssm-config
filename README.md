@@ -205,6 +205,33 @@ await config.initializeConfig(
 
 Access configuration values directly as properties of the config object. Will throw an error if accessed before initialization (unless the value has a `fallbackStatic` defined).
 
+### Environment Variable Precedence
+
+The configuration system always respects the current state of environment variables, even after initialization:
+
+- **Environment variables always take precedence** over SSM parameters and static fallbacks
+- If you modify an environment variable at any time after initialization, the updated value will be used
+- This allows for runtime overrides of configuration values
+- SSM parameters are only fetched once during initialization and then cached
+- This behavior ensures maximum flexibility while maintaining performance
+
+Example of dynamic environment variable update:
+```javascript
+const config = require('./ssmConfig');
+
+// Initialize with SSM fallback
+config.configMap = {
+  API_URL: { envVar: 'API_URL', fallbackSSM: '/my-app/api-url', type: 'string' }
+};
+
+await config.initializeConfig();
+console.log(config.API_URL); // Value from SSM
+
+// Override at runtime
+process.env.API_URL = 'https://new-api-endpoint.com';
+console.log(config.API_URL); // Will show the new value: 'https://new-api-endpoint.com'
+```
+
 ### Value Types
 
 The configuration supports four types of values:
@@ -226,9 +253,9 @@ The package automatically detects if it's running in a Lambda environment and wi
 
 ### Caching
 
-- Configuration values are loaded once at initialization
-- Values are stored in environment variables for subsequent access
-- No additional API calls are made after initialization
+- SSM parameter values are loaded once at initialization and cached
+- Environment variables are always checked at runtime and take precedence
+- No additional API calls to SSM are made after initialization
 
 ## AWS Lambda Support
 

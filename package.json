@@ -1,6 +1,6 @@
 {
   "name": "@dwkerwin/ssm-config",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "A config loader for environment variables, AWS SSM parameters, and static fallbacks, optimized for AWS Lambda with Extensions API support.",
   "main": "index.js",
   "scripts": {
