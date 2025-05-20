@@ -8,6 +8,7 @@ let log = new ConfigLogger();
 let configInitialized = false;
 let initializationPromise = null;
 let configMap = null;  // Will be set by the user
+let ssmCache = {};  // Cache for SSM parameter values
 
 const isLambda = !!(process.env.LAMBDA_TASK_ROOT || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -186,6 +187,9 @@ async function loadConfig(kmsKeyId = null) {
     if (Object.keys(ssmValues).length === 0) {
       ssmValues = await getBatchFromSSM(ssmParameters, kmsKeyId);
     }
+
+    // Store SSM values in cache for later access
+    ssmCache = { ...ssmValues };
   }
 
   const configValues = [];
@@ -291,7 +295,7 @@ async function initializeConfig(kmsKeyId = null, options = {}) {
 
 // Function to get config values
 function getConfig(key) {
-  const { envVar, fallbackStatic, type } = configMap[key];
+  const { envVar, fallbackSSM, fallbackStatic, type } = configMap[key];
   
   if (!configInitialized) {
     // If not initialized, return fallback or throw error
@@ -301,14 +305,22 @@ function getConfig(key) {
     throw new Error('Config not initialized. Call initializeConfig() first.');
   }
   
-  // Check if environment variable exists
-  const envValue = process.env[envVar];
-  if (envValue === undefined && fallbackStatic !== undefined) {
-    // Fall back to static value if env var is somehow undefined after initialization
+  // Always check environment variable first (allowing for dynamic updates)
+  if (process.env[envVar] !== undefined) {
+    return convertValue(process.env[envVar], type);
+  }
+  
+  // If we've stored an SSM value during initialization, use that
+  if (fallbackSSM && ssmCache[fallbackSSM] !== undefined) {
+    return convertValue(ssmCache[fallbackSSM], type);
+  }
+  
+  // Finally, fall back to static value
+  if (fallbackStatic !== undefined) {
     return convertValue(fallbackStatic, type);
   }
   
-  return convertValue(envValue, type);
+  throw new Error(`Missing configuration value for ${key}`);
 }
 
 // Create a proxy object for easy access to config values

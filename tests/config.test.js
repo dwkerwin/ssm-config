@@ -533,4 +533,34 @@ describe('SSM Config', () => {
     // Now access the config - this should still use the fallback
     expect(config.BOOL_KEY).toBe(true);
   });
+
+  test('should respect changes to environment variables after initialization', async () => {
+    // Initialize with one value
+    process.env.DYNAMIC_TEST_VAR = 'initial-value';
+    
+    const config = require('../index');
+    config.configMap = {
+      DYNAMIC_KEY: { 
+        envVar: 'DYNAMIC_TEST_VAR',
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM, // Fallback if env var not set
+        type: 'string' 
+      }
+    };
+
+    // Initialize the config
+    await config.initializeConfig();
+    
+    // Initial value check
+    expect(config.DYNAMIC_KEY).toBe('initial-value');
+    
+    // Change the environment variable after initialization
+    process.env.DYNAMIC_TEST_VAR = 'updated-value';
+    
+    // The config should now return the updated value
+    expect(config.DYNAMIC_KEY).toBe('updated-value');
+    
+    // Delete the env var - should fall back to the SSM value
+    delete process.env.DYNAMIC_TEST_VAR;
+    expect(config.DYNAMIC_KEY).toBe('test-string-value');
+  });
 });
