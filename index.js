@@ -55,9 +55,9 @@ async function getParameterFromSSM(parameterName, kmsKeyId = null) {
     WithDecryption: true
   };
 
-  if (kmsKeyId) {
-    params.KeyId = kmsKeyId;
-  }
+  // Don't set KeyId - let AWS handle the decryption automatically
+  // If the parameter is encrypted, AWS will use the appropriate key
+  // If it's not encrypted, AWS will return the plain text value
 
   try {
     const command = new GetParameterCommand(params);
