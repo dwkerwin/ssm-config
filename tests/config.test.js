@@ -216,6 +216,32 @@ describe('SSM Config', () => {
     expect(config.KMS_KEY).toBe('kms-encrypted-value');
   });
 
+  test('should handle mixed encrypted/unencrypted parameters with custom KMS key', async () => {
+    const config = require('../index');
+    
+    // Set up a config with both encrypted (KMS_PARAM) and unencrypted (STRING_PARAM) parameters
+    // This tests the try-catch logic when using a custom KMS key
+    config.configMap = {
+      ENCRYPTED_KEY: { 
+        envVar: 'ENCRYPTED_VALUE', 
+        fallbackSSM: TEST_CONFIG.PARAMS.KMS_PARAM,  // SecureString with custom KMS key
+        type: 'string' 
+      },
+      UNENCRYPTED_KEY: { 
+        envVar: 'UNENCRYPTED_VALUE', 
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM,  // Plain String parameter
+        type: 'string' 
+      }
+    };
+
+    // Use custom KMS key - this should trigger try-catch for the unencrypted parameter
+    await config.initializeConfig(TEST_CONFIG.KMS_KEY_ALIAS);
+    
+    // Both parameters should load successfully
+    expect(config.ENCRYPTED_KEY).toBe('kms-encrypted-value');
+    expect(config.UNENCRYPTED_KEY).toBe('test-string-value');
+  });
+
   // Add this test to verify the README example interface
   test('should work with the README example interface', async () => {
     const config = require('../index');

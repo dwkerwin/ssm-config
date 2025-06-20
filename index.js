@@ -50,30 +50,72 @@ async function getFromLambdaExtension(parameterName, kmsKeyId = null) {
 
 // Helper function to fetch a single parameter from SSM
 async function getParameterFromSSM(parameterName, kmsKeyId = null) {
-  const params = {
+  const baseParams = {
     Name: parameterName,
     WithDecryption: true
   };
 
-  // Don't set KeyId - let AWS handle the decryption automatically
-  // If the parameter is encrypted, AWS will use the appropriate key
-  // If it's not encrypted, AWS will return the plain text value
-
-  try {
-    const command = new GetParameterCommand(params);
-    const response = await ssmClient.send(command);
-    return response.Parameter.Value;
-  } catch (err) {
-    // Improve error messages based on error code
-    if (err.name === 'ParameterNotFound') {
-      log.warn(`SSM parameter ${parameterName} not found in this AWS account`);
-    } else if (err.name === 'AccessDeniedException') {
-      log.warn(`Access denied to SSM parameter ${parameterName}. Please check AWS credentials and permissions`);
-    } else {
-      log.warn(`Error fetching SSM parameter ${parameterName}: ${err.message}`);
+  // Handle mixed encryption scenarios when using custom KMS keys
+  // BACKGROUND: When using a custom KMS key, some parameters may be encrypted with that key
+  // while others may be unencrypted. This creates a challenge:
+  // - Encrypted parameters REQUIRE the KeyId to decrypt
+  // - Unencrypted parameters FAIL if KeyId is provided
+  // 
+  // SOLUTION: Try with custom key first (for encrypted params), fallback without key (for unencrypted)
+  // PERFORMANCE: Only adds overhead in mixed encryption scenarios (should be rare)
+  // BEST PRACTICE: Encrypt all parameters with the same custom key to avoid this complexity
+  if (kmsKeyId) {
+    // First attempt: Try with custom KMS key (for parameters encrypted with this key)
+    try {
+      const paramsWithKey = { ...baseParams, KeyId: kmsKeyId };
+      const command = new GetParameterCommand(paramsWithKey);
+      const response = await ssmClient.send(command);
+      return response.Parameter.Value;
+    } catch (err) {
+      // If KMS-related error, the parameter might be unencrypted - try without KeyId
+      if (err.name === 'InvalidKeyId' || 
+          err.name === 'KMSInvalidStateException' || 
+          err.name === 'ValidationException' ||
+          (err.message && err.message.includes('KeyId'))) {
+        
+        log.info(`Parameter ${parameterName} failed with custom KMS key, trying without KeyId (likely unencrypted parameter)`);
+        
+        // Second attempt: Try without KeyId (for unencrypted parameters)
+        try {
+          const command = new GetParameterCommand(baseParams);
+          const response = await ssmClient.send(command);
+          return response.Parameter.Value;
+        } catch (secondErr) {
+          // Both attempts failed - handle as normal error
+          return handleParameterError(parameterName, secondErr);
+        }
+      } else {
+        // Non-KMS related error - handle normally
+        return handleParameterError(parameterName, err);
+      }
     }
-    return null;
+  } else {
+    // Standard path: No custom KMS key specified
+    try {
+      const command = new GetParameterCommand(baseParams);
+      const response = await ssmClient.send(command);
+      return response.Parameter.Value;
+    } catch (err) {
+      return handleParameterError(parameterName, err);
+    }
   }
+}
+
+// Helper function to handle parameter fetch errors consistently
+function handleParameterError(parameterName, err) {
+  if (err.name === 'ParameterNotFound') {
+    log.warn(`SSM parameter ${parameterName} not found in this AWS account`);
+  } else if (err.name === 'AccessDeniedException') {
+    log.warn(`Access denied to SSM parameter ${parameterName}. Please check AWS credentials and permissions`);
+  } else {
+    log.warn(`Error fetching SSM parameter ${parameterName}: ${err.message}`);
+  }
+  return null;
 }
 
 // Helper function to fetch all parameters
