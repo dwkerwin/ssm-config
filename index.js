@@ -138,32 +138,45 @@ async function getBatchFromSSM(parameterNames, kmsKeyId = null) {
     return values;
   }
 
-  const params = {
-    Names: parameterNames,
-    WithDecryption: true
-  };
+  // Split parameter names into chunks of 10 due to AWS API limit
+  const batchSize = 10;
+  const values = {};
+  const allInvalidParameters = [];
 
-  try {
-    const command = new GetParametersCommand(params);
-    const response = await ssmClient.send(command);
-    const values = {};
+  for (let i = 0; i < parameterNames.length; i += batchSize) {
+    const batch = parameterNames.slice(i, i + batchSize);
     
-    response.Parameters.forEach(param => {
-      values[param.Name] = param.Value;
-      if (!isQuietMode) {
-        log.debug(`Successfully fetched SSM parameter ${param.Name}`);
-      }
-    });
+    const params = {
+      Names: batch,
+      WithDecryption: true
+    };
 
-    response.InvalidParameters.forEach(param => {
-      log.warn(`SSM parameter ${param} was not found.`);
-    });
+    try {
+      const command = new GetParametersCommand(params);
+      const response = await ssmClient.send(command);
+      
+      response.Parameters.forEach(param => {
+        values[param.Name] = param.Value;
+        if (!isQuietMode) {
+          log.debug(`Successfully fetched SSM parameter ${param.Name}`);
+        }
+      });
 
-    return values;
-  } catch (err) {
-    log.warn(`Error fetching batch SSM parameters via SSM API: ${err.message}`);
-    return {};
+      // Collect invalid parameters from all batches
+      allInvalidParameters.push(...response.InvalidParameters);
+
+    } catch (err) {
+      log.warn(`Error fetching batch SSM parameters (batch ${Math.floor(i/batchSize) + 1}) via SSM API: ${err.message}`);
+      // Continue with next batch rather than failing entirely
+    }
   }
+
+  // Log all invalid parameters at the end
+  allInvalidParameters.forEach(param => {
+    log.warn(`SSM parameter ${param} was not found.`);
+  });
+
+  return values;
 }
 
 // Function to convert values based on the expected type
