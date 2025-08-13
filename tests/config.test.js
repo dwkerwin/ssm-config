@@ -18,7 +18,20 @@ describe('SSM Config', () => {
       FLOAT_PARAM: '/test/ssm-config/float-param',
       BOOL_ZERO_PARAM: '/test/ssm-config/bool-zero-param',
       SECRET_PARAM: '/test/ssm-config/secret-param',
-      KMS_PARAM: '/test/ssm-config/kms-param'
+      KMS_PARAM: '/test/ssm-config/kms-param',
+      // Additional params for batch testing (>10 params total)
+      BATCH_PARAM_1: '/test/ssm-config/batch-param-1',
+      BATCH_PARAM_2: '/test/ssm-config/batch-param-2',
+      BATCH_PARAM_3: '/test/ssm-config/batch-param-3',
+      BATCH_PARAM_4: '/test/ssm-config/batch-param-4',
+      BATCH_PARAM_5: '/test/ssm-config/batch-param-5',
+      BATCH_PARAM_6: '/test/ssm-config/batch-param-6',
+      BATCH_PARAM_7: '/test/ssm-config/batch-param-7',
+      BATCH_PARAM_8: '/test/ssm-config/batch-param-8',
+      BATCH_PARAM_9: '/test/ssm-config/batch-param-9',
+      BATCH_PARAM_10: '/test/ssm-config/batch-param-10',
+      BATCH_PARAM_11: '/test/ssm-config/batch-param-11',
+      BATCH_PARAM_12: '/test/ssm-config/batch-param-12'
     },
     KMS_KEY_ALIAS: 'alias/ssm-parameter-key'
   };
@@ -70,6 +83,79 @@ describe('SSM Config', () => {
         Value: 'kms-encrypted-value',
         Type: 'SecureString',
         KeyId: TEST_CONFIG.KMS_KEY_ALIAS,
+        Overwrite: true
+      }),
+      // Additional parameters for batch testing
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_1,
+        Value: 'batch-value-1',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_2,
+        Value: 'batch-value-2',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_3,
+        Value: 'batch-value-3',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_4,
+        Value: 'batch-value-4',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_5,
+        Value: 'batch-value-5',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_6,
+        Value: 'batch-value-6',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_7,
+        Value: 'batch-value-7',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_8,
+        Value: 'batch-value-8',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_9,
+        Value: 'batch-value-9',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_10,
+        Value: 'batch-value-10',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_11,
+        Value: 'batch-value-11',
+        Type: 'String',
+        Overwrite: true
+      }),
+      new PutParameterCommand({
+        Name: TEST_CONFIG.PARAMS.BATCH_PARAM_12,
+        Value: 'batch-value-12',
+        Type: 'String',
         Overwrite: true
       })
     ];
@@ -588,5 +674,127 @@ describe('SSM Config', () => {
     // Delete the env var - should fall back to the SSM value
     delete process.env.DYNAMIC_TEST_VAR;
     expect(config.DYNAMIC_KEY).toBe('test-string-value');
+  });
+
+  test('should handle more than 10 SSM parameters by batching requests', async () => {
+    const config = require('../index');
+    
+    // Create a config with more than 10 SSM parameters (18 total - excluding KMS param to avoid decryption issues)
+    config.configMap = {
+      STRING_KEY: { 
+        envVar: 'STRING_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.STRING_PARAM, 
+        type: 'string' 
+      },
+      INT_KEY: { 
+        envVar: 'INT_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.INT_PARAM, 
+        type: 'int' 
+      },
+      BOOL_KEY: { 
+        envVar: 'BOOL_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BOOL_PARAM, 
+        type: 'bool' 
+      },
+      FLOAT_KEY: { 
+        envVar: 'FLOAT_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.FLOAT_PARAM, 
+        type: 'float' 
+      },
+      BOOL_ZERO_KEY: { 
+        envVar: 'BOOL_ZERO_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BOOL_ZERO_PARAM, 
+        type: 'bool' 
+      },
+      SECRET_KEY: { 
+        envVar: 'SECRET_VAL', 
+        fallbackSSM: TEST_CONFIG.PARAMS.SECRET_PARAM, 
+        type: 'string' 
+      },
+      BATCH_KEY_1: { 
+        envVar: 'BATCH_VAL_1', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_1, 
+        type: 'string' 
+      },
+      BATCH_KEY_2: { 
+        envVar: 'BATCH_VAL_2', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_2, 
+        type: 'string' 
+      },
+      BATCH_KEY_3: { 
+        envVar: 'BATCH_VAL_3', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_3, 
+        type: 'string' 
+      },
+      BATCH_KEY_4: { 
+        envVar: 'BATCH_VAL_4', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_4, 
+        type: 'string' 
+      },
+      BATCH_KEY_5: { 
+        envVar: 'BATCH_VAL_5', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_5, 
+        type: 'string' 
+      },
+      BATCH_KEY_6: { 
+        envVar: 'BATCH_VAL_6', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_6, 
+        type: 'string' 
+      },
+      BATCH_KEY_7: { 
+        envVar: 'BATCH_VAL_7', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_7, 
+        type: 'string' 
+      },
+      BATCH_KEY_8: { 
+        envVar: 'BATCH_VAL_8', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_8, 
+        type: 'string' 
+      },
+      BATCH_KEY_9: { 
+        envVar: 'BATCH_VAL_9', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_9, 
+        type: 'string' 
+      },
+      BATCH_KEY_10: { 
+        envVar: 'BATCH_VAL_10', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_10, 
+        type: 'string' 
+      },
+      BATCH_KEY_11: { 
+        envVar: 'BATCH_VAL_11', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_11, 
+        type: 'string' 
+      },
+      BATCH_KEY_12: { 
+        envVar: 'BATCH_VAL_12', 
+        fallbackSSM: TEST_CONFIG.PARAMS.BATCH_PARAM_12, 
+        type: 'string' 
+      }
+    };
+
+    // Initialize without KMS key to test batch fetching (not individual fetching)
+    await config.initializeConfig();
+    
+    // Verify all parameters were loaded correctly
+    // This tests that the batching logic correctly handles >10 parameters
+    expect(config.STRING_KEY).toBe('test-string-value');
+    expect(config.INT_KEY).toBe(42);
+    expect(config.BOOL_KEY).toBe(true);
+    expect(config.FLOAT_KEY).toBe(3.14);
+    expect(config.BOOL_ZERO_KEY).toBe(false);
+    expect(config.SECRET_KEY).toBe('secret-value');
+    expect(config.BATCH_KEY_1).toBe('batch-value-1');
+    expect(config.BATCH_KEY_2).toBe('batch-value-2');
+    expect(config.BATCH_KEY_3).toBe('batch-value-3');
+    expect(config.BATCH_KEY_4).toBe('batch-value-4');
+    expect(config.BATCH_KEY_5).toBe('batch-value-5');
+    expect(config.BATCH_KEY_6).toBe('batch-value-6');
+    expect(config.BATCH_KEY_7).toBe('batch-value-7');
+    expect(config.BATCH_KEY_8).toBe('batch-value-8');
+    expect(config.BATCH_KEY_9).toBe('batch-value-9');
+    expect(config.BATCH_KEY_10).toBe('batch-value-10');
+    expect(config.BATCH_KEY_11).toBe('batch-value-11');
+    expect(config.BATCH_KEY_12).toBe('batch-value-12');
   });
 });
