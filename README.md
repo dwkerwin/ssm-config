@@ -189,16 +189,81 @@ Asynchronously initializes the configuration. This should be called once at the 
   - A key ID: `"1234abcd-12ab-34cd-56ef-1234567890ab"`
   - A key alias: `"alias/my-custom-key"`
 - `options`: (Optional) Configuration options object:
-  - `quiet`: (boolean) When true, suppresses verbose logging and only shows a condensed summary of loaded parameters. Default: false.
+  - `quiet`: (boolean) When true, suppresses detailed parameter output and only shows a summary. Default: false.
+  - `timeout`: (number) Custom timeout in milliseconds for AWS SSM API calls. Default: 8000 (8 seconds). Note: This applies per retry attempt, with 3 total attempts.
 
-Example with quiet mode:
+### Controlling Log Verbosity
+
+There are two ways to control logging verbosity:
+
+#### 1. Quiet Mode (per-initialization)
+Use the `quiet` option to suppress details for a specific initialization:
+
 ```javascript
-await config.initializeConfig(
-    process.env.SSM_PARAMETER_KMS_KEY || 'alias/my-custom-key',
-    { quiet: true }
-);
-// Output will be condensed to a single line like:
-// Config loaded: 2 from env, 3 from ssm, 1 from default
+// Suppress detailed output for this initialization only
+await config.initializeConfig(null, { quiet: true });
+// Output: Config loaded: 2 from env, 3 from ssm (total initialization time: 456ms)
+
+// Normal verbose output
+await config.initializeConfig();
+// Output: Full details including each parameter
+```
+
+#### 2. LOG_LEVEL Environment Variable (global)
+Use the standard `LOG_LEVEL` environment variable for application-wide control:
+
+```bash
+export LOG_LEVEL=error  # Only errors
+export LOG_LEVEL=warn   # Warnings and errors
+export LOG_LEVEL=info   # Standard output (default)
+export LOG_LEVEL=debug  # Detailed output including all parameters
+export LOG_LEVEL=silent # No output at all
+```
+
+Example outputs:
+
+```javascript
+// With quiet mode (regardless of LOG_LEVEL)
+await config.initializeConfig(null, { quiet: true });
+// Output: Config loaded: 2 from env, 3 from ssm, 1 from default (total initialization time: 456ms)
+
+// Without quiet mode + LOG_LEVEL=info (default)
+await config.initializeConfig();
+// Output:
+// Config loaded: 2 from env, 3 from ssm, 1 from default (total initialization time: 456ms)
+// Loaded configuration values:
+//   DB_HOST: (string) (15 characters) (ssm)
+//   DB_PORT: (int) (4 digits) (env)
+//   DEBUG_MODE: (bool) (default)
+
+// Without quiet mode + LOG_LEVEL=debug
+await config.initializeConfig();
+// Output:
+// Starting configuration initialization...
+// Fetching batch 1/1 (5 parameters)
+// Batch 1/1 completed in 234ms (5 found, 0 not found) 
+// Config loaded: 2 from env, 3 from ssm, 1 from default (total initialization time: 456ms)
+// Loaded configuration values:
+//   DB_HOST: (string) (15 characters) (ssm)
+//   DB_PORT: (int) (4 digits) (env)
+//   DEBUG_MODE: (bool) (default)
+// Configuration initialization completed successfully
+```
+
+**When to use each approach:**
+- Use `quiet: true` for **component-level override** - keeps SSM config minimal regardless of application LOG_LEVEL
+- Use `LOG_LEVEL` to control verbosity application-wide
+
+**Component-Level Override Behavior:**
+When `quiet: true` is used, it overrides `LOG_LEVEL` for SSM config:
+- ✅ **Always shows**: Summary, warnings, and errors (critical information)  
+- ❌ **Never shows**: Debug logs, info logs, parameter details (noise)
+
+This allows you to have `LOG_LEVEL=debug` for your application while keeping SSM config initialization clean and minimal.
+
+Example with custom timeout:
+```javascript
+await config.initializeConfig(null, { timeout: 60000 }); // 60 second timeout
 ```
 
 #### `config.SOME_CONFIG_KEY`
@@ -244,6 +309,79 @@ The configuration supports four types of values:
   - Any other values will throw an error
 
 Invalid types (such as 'boolean' instead of 'bool') will cause an error to be thrown during initialization.
+
+### Robustness and Timeout Protection
+
+The library implements comprehensive timeout and error handling to prevent hanging:
+
+**Default Timeouts (Optimized for API Gateway):**
+- AWS SSM API calls: 8 seconds per attempt (configurable)
+- AWS Lambda Extensions API calls: 3 seconds (fixed)
+- Maximum total time: 24 seconds (3 attempts × 8s)
+- **Why 24 seconds?** AWS API Gateway has a 29-second hard limit. Our timeouts ensure your application can return its own error response rather than being cut off with a 504 Gateway Timeout.
+
+**About Lambda Extensions API:**
+The "Lambda Extensions API" refers to the AWS Parameters and Secrets Lambda Extension - a local caching layer that runs at `localhost:2773` within Lambda environments. This is NOT about general Lambda function timeouts. When running in Lambda, the library will:
+1. First try the Extensions API (3-second timeout) for faster, cached parameter access
+2. If unavailable or times out, automatically fall back to direct SSM API calls
+3. Log the fallback clearly so you know what's happening
+
+**Built-in Protection Features:**
+- All AWS SSM calls have automatic timeout protection (8s per attempt)
+- AWS SDK automatically retries failed requests (3 total attempts with exponential backoff)
+- Total worst-case time: ~24 seconds (stays under API Gateway's 29-second limit)
+- Leaves 5-second buffer for your application to return a proper error response
+- Parallel fetching with concurrency limits (max 3 concurrent requests when using KMS)
+- Graceful degradation when SSM is unavailable
+- Clear logging at each failure point for debugging
+
+**Strategic Logging (Reduced Verbosity):**
+The library uses smart logging to reduce noise while preserving debugging capability:
+- **Normal operations are quiet** - successful fetches aren't logged individually
+- **Slow operations are flagged** - any fetch taking >1 second is logged
+- **Errors include timing** - all failures show elapsed time for diagnosis
+- **Batch progress shown** - for visibility during multi-parameter fetches
+- **Total time in summary** - always shows overall initialization time
+
+This approach eliminates duplicate logging while ensuring you have full visibility when things go wrong.
+
+**Large Parameter Sets (40+ parameters):**
+The library efficiently handles applications with many SSM parameters:
+- Automatically batches requests (10 parameters per API call)
+- For 40 parameters: 4 batch calls, typically completes in ~1 second
+- With KMS encryption: Parallel fetching in groups of 3
+- No artificial delays - optimized for Lambda cold starts
+- Clear progress indicators: "Batch 3/5 (10 parameters)" (shown with LOG_LEVEL=debug)
+- Handles throttling reactively if it occurs
+
+Example output with timing information:
+
+**Normal operation:**
+```
+Starting configuration initialization...
+Fetching batch 1/2 (10 parameters)
+Batch 1/2 completed in 234ms (10 found, 0 not found)
+Config loaded: 2 from env, 8 from ssm, 2 from default (total initialization time: 456ms)
+```
+
+**Lambda environment with Extensions API fallback:**
+```
+Starting configuration initialization...
+Attempting to fetch 5 parameters via Lambda Extensions API
+Lambda Extensions API timeout for parameter /app/db-host after 3001ms (limit: 3000ms) - falling back to direct SSM API
+Lambda Extensions API unavailable or parameter not found - switching to direct SSM API calls
+Fetching 5 parameters via direct SSM API calls
+Batch fetch completed: 5 parameters retrieved, 0 failed (total time: 3234ms)
+Config loaded: 1 from env, 5 from ssm (total initialization time: 3235ms)
+```
+
+If you experience hanging issues, the timing logs will help identify whether the problem is:
+- Lambda Extensions API unavailable (immediate fallback to SSM)
+- Network connectivity issues (network errors)
+- AWS service issues (timeouts after 8s per attempt)
+- Throttling (explicit throttling errors with immediate identification)
+- Slow but successful responses (long elapsed times but under timeout)
+- API Gateway timeout risk (total time approaching 24s)
 
 ### Environment Detection
 

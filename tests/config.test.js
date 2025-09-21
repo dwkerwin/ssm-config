@@ -431,7 +431,7 @@ describe('SSM Config', () => {
 
     // Should only show the summary line
     expect(mockLogger.output.info.mock.calls).toHaveLength(1);
-    expect(mockLogger.output.info.mock.calls[0][0]).toBe('Config loaded: 1 from env, 1 from ssm, 1 from default');
+    expect(mockLogger.output.info.mock.calls[0][0]).toMatch(/^Config loaded: 1 from env, 1 from ssm, 1 from default \(total initialization time: \d+ms\)$/);
     
     // Debug logs should be suppressed
     expect(mockLogger.output.debug.mock.calls).toHaveLength(0);
@@ -674,6 +674,113 @@ describe('SSM Config', () => {
     // Delete the env var - should fall back to the SSM value
     delete process.env.DYNAMIC_TEST_VAR;
     expect(config.DYNAMIC_KEY).toBe('test-string-value');
+  });
+
+  test('should respect LOG_LEVEL environment variable for verbosity control', async () => {
+    // Mock is used here because we're testing logging behavior, not SSM functionality
+    // (same approach as existing quiet mode test)
+    jest.resetModules();
+    
+    // Set LOG_LEVEL before requiring module
+    process.env.LOG_LEVEL = 'error';
+    
+    const config = require('../index');
+    const ConfigLogger = require('../lib/logger');
+
+    // Create mock logger to capture output levels
+    const mockLogger = new ConfigLogger({
+      output: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      }
+    });
+
+    // Mock SSM client
+    const mockSSMClient = { 
+      send: jest.fn().mockResolvedValue({
+        Parameters: [{ Name: '/test/param', Value: 'test-value' }],
+        InvalidParameters: []
+      })
+    };
+
+    config.configMap = {
+      TEST_KEY: { envVar: 'TEST_LOG_LEVEL', fallbackSSM: '/test/param', type: 'string' }
+    };
+    
+    config.ssmClient = mockSSMClient;
+    config.log = mockLogger;
+
+    await config.initializeConfig();
+
+    // With LOG_LEVEL=error, should only show errors (and summary which is always info level)
+    expect(mockLogger.output.debug).not.toHaveBeenCalled();
+    expect(mockLogger.output.error).not.toHaveBeenCalled(); // No errors occurred
+    expect(mockLogger.output.info).toHaveBeenCalledTimes(1); // Just the summary
+    
+    // Clean up
+    delete process.env.LOG_LEVEL;
+  });
+
+  test('should accept custom timeout option', async () => {
+    // Mock is used here to avoid waiting for actual timeouts in tests
+    // Real timeout testing would require intentionally slow/failing SSM calls
+    jest.resetModules();
+    
+    const config = require('../index');
+
+    config.configMap = {
+      TEST_KEY: { envVar: 'TEST_TIMEOUT', fallbackStatic: 'default', type: 'string' }
+    };
+
+    // Test that custom timeout is accepted without throwing errors
+    // (Testing actual timeout behavior would require real AWS failures)
+    await expect(config.initializeConfig(null, { timeout: 5000 })).resolves.toBeUndefined();
+    await expect(config.initializeConfig(null, { timeout: 15000 })).resolves.toBeUndefined();
+    
+    // Verify default timeout constant is reasonable for API Gateway
+    expect(config.DEFAULT_TIMEOUT_MS).toBeLessThan(10000); // Should be under 10 seconds
+    expect(config.DEFAULT_TIMEOUT_MS).toBeGreaterThan(5000); // Should be reasonable
+  });
+
+  test('should provide component-level override with quiet mode', async () => {
+    // Mock is used because we're testing component-level logging behavior
+    // This verifies quiet mode overrides LOG_LEVEL for SSM config specifically
+    jest.resetModules();
+    
+    // Set LOG_LEVEL to most verbose, but use quiet mode
+    process.env.LOG_LEVEL = 'debug';
+    
+    const config = require('../index');
+    const ConfigLogger = require('../lib/logger');
+
+    const mockLogger = new ConfigLogger({
+      quiet: true, // Component-level override
+      output: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      }
+    });
+
+    config.configMap = {
+      TEST_KEY: { envVar: 'TEST_COMPONENT', fallbackStatic: 'default', type: 'string' }
+    };
+    config.log = mockLogger;
+
+    await config.initializeConfig(null, { quiet: true });
+
+    // Even with LOG_LEVEL=debug, quiet mode should suppress verbose output
+    expect(mockLogger.output.debug).not.toHaveBeenCalled();
+    expect(mockLogger.output.info).toHaveBeenCalledTimes(1); // Just summary
+    
+    // But warnings/errors would still show (component-level override)
+    // No warnings/errors in this test, but behavior is verified in logger tests
+    
+    // Clean up
+    delete process.env.LOG_LEVEL;
   });
 
   test('should handle more than 10 SSM parameters by batching requests', async () => {
